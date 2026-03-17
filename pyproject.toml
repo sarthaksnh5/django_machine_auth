@@ -1,0 +1,46 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "django_machine_auth"
+version = "0.1.0"
+description = "Machine-to-machine API key authentication for Django REST Framework"
+readme = "README.md"
+requires-python = ">=3.9"
+license = "MIT"
+authors = [{name = "django_machine_auth contributors"}]
+dependencies = ["Django>=3.2", "djangorestframework>=3.13"]
+keywords = ["django", "drf", "api-key", "authentication", "machine-to-machine", "permissions"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Environment :: Web Environment",
+  "Framework :: Django",
+  "Framework :: Django :: 3.2",
+  "Framework :: Django :: 4.2",
+  "Framework :: Django :: 5.0",
+  "Framework :: Django :: 5.1",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.9",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Internet :: WWW/HTTP",
+  "Topic :: Security",
+]
+
+[project.urls]
+Homepage = "https://github.com/example/django_machine_auth"
+Documentation = "https://github.com/example/django_machine_auth#readme"
+Repository = "https://github.com/example/django_machine_auth"
+Issues = "https://github.com/example/django_machine_auth/issues"
+
+[project.optional-dependencies]
+test = ["pytest>=7.0", "pytest-django>=4.5"]
+dev = ["build>=1.2", "twine>=5.0", "ruff>=0.6.0", "pytest>=7.0", "pytest-django>=4.5"]
+
+[tool.setuptools.packages.find]
+include = ["django_machine_auth*"]
+
+[tool.setuptools]
+include-package-data = true
