@@ -1,4 +1,5 @@
 import pytest
+from django.test import override_settings
 
 from django_machine_auth.exceptions import MachineAuthConfigurationError
 from django_machine_auth.registry.module_registry import MODULE_REGISTRY, register_module
@@ -25,6 +26,7 @@ def _build_viewset(action_defs):
     return DummyViewSet
 
 
+@override_settings(MACHINE_AUTH={"STRICT_ACTION_VALIDATION": True})
 def test_validate_custom_actions_raises_when_action_missing_from_module():
     MODULE_REGISTRY.clear()
     register_module("users", "Users", actions={"profile": ["get"]})
@@ -35,6 +37,7 @@ def test_validate_custom_actions_raises_when_action_missing_from_module():
     assert "api_key_perm.py" in str(exc.value)
 
 
+@override_settings(MACHINE_AUTH={"STRICT_ACTION_VALIDATION": True})
 def test_validate_custom_actions_raises_when_method_missing_from_module():
     MODULE_REGISTRY.clear()
     register_module("users", "Users", actions={"profile": ["get"]})

@@ -26,6 +26,7 @@ Review these settings after each upgrade:
 - `MACHINE_AUTH.ENABLE_REQUEST_LOGGING`
 - `MACHINE_AUTH.LOGGING_MODE`
 - `MACHINE_AUTH.CACHE_TIMEOUT`
+- `MACHINE_AUTH.STRICT_ACTION_VALIDATION` (default `False` since 0.3.1)
 
 If new settings are introduced, defaults are chosen to preserve prior behavior unless release notes specify otherwise.
 
@@ -58,6 +59,29 @@ If new settings are introduced, defaults are chosen to preserve prior behavior u
 - `MachineAuthViewSet`, authentication header format, and permission strings are unchanged.
 - Existing API keys and `MachineAPIKey.permissions` JSON continue to work without migration of key data.
 - Django admin key management remains available.
+
+## Upgrading to 0.3.1
+
+### What changed
+
+- New setting `STRICT_ACTION_VALIDATION` (default **`False`**).
+- Custom `@action`s **not** listed in `api_key_perm.py` no longer fail Django startup by default; a warning is logged instead.
+- Those undeclared actions require only a **valid API key** at runtime (no scoped permission string).
+- **CRUD** actions still always require permissions (`module.view`, `module.create`, etc.).
+
+### Recommended for existing strict integrations
+
+If you relied on startup failing when `@action` was missing from `api_key_perm.py`, set:
+
+```python
+MACHINE_AUTH = {
+    "STRICT_ACTION_VALIDATION": True,
+}
+```
+
+### Backward compatibility
+
+- No migration required. Behavior change is configuration-driven.
 
 ## Upgrading to 0.3.0
 

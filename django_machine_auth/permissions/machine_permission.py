@@ -1,7 +1,7 @@
 from rest_framework.permissions import BasePermission
 
 from django_machine_auth.registry.module_registry import get_module
-from django_machine_auth.utils.permission_resolver import resolve_permission
+from django_machine_auth.utils.permission_resolver import resolve_permission, should_enforce_permission
 
 
 class MachineAuthPermission(BasePermission):
@@ -19,5 +19,8 @@ class MachineAuthPermission(BasePermission):
             return False
 
         action = getattr(view, "action", "")
+        if not should_enforce_permission(module_name, action, request.method):
+            return True
+
         required = resolve_permission(module_name, action, request.method)
         return required in set(getattr(api_key, "permissions", []) or [])

@@ -5,6 +5,7 @@ DEFAULTS = {
     "ENABLE_REQUEST_LOGGING": False,
     "LOGGING_MODE": "redacted",
     "CACHE_TIMEOUT": 3600,
+    "STRICT_ACTION_VALIDATION": False,
 }
 
 
@@ -30,3 +31,7 @@ def logging_mode():
 
 def cache_timeout():
     return int(get_machine_auth_setting("CACHE_TIMEOUT") or DEFAULTS["CACHE_TIMEOUT"])
+
+
+def strict_action_validation():
+    return bool(get_machine_auth_setting("STRICT_ACTION_VALIDATION"))

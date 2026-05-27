@@ -4,7 +4,7 @@
 
 API key authentication for Django REST Framework with module-scoped permissions (similar to how platforms like GitHub, Stripe, or OpenAI expose scoped API keys).
 
-**Current version:** 0.3.0 — permission catalog, API key management, and request log REST APIs.
+**Current version:** 0.3.1 — relaxed custom-action validation (opt-in strict mode).
 
 ## Documentation map
 
@@ -66,6 +66,7 @@ MACHINE_AUTH = {
     "ENABLE_REQUEST_LOGGING": False,
     "LOGGING_MODE": "redacted",
     "CACHE_TIMEOUT": 3600,
+    "STRICT_ACTION_VALIDATION": False,  # True = require all @actions in api_key_perm.py
 }
 
 REST_FRAMEWORK = {
@@ -152,8 +153,10 @@ Authorization: machine_auth mac_xxxxx
 
 1. Set `module = "<name>"` matching `@api_key_module("<name>")`.
 2. Add DRF mixins (`ListModelMixin`, etc.) and implement actions.
-3. Declare custom `@action` names in `api_key_perm.py` under `actions`.
+3. Declare custom `@action` names in `api_key_perm.py` under `actions` (required when `STRICT_ACTION_VALIDATION` is `True`; optional otherwise).
 4. If mixing with another base viewset (e.g. JWT), put `MachineAuthViewSet` **first** in inheritance, or set `authentication_classes` / `permission_classes` explicitly on the combined class.
+
+**Custom actions not in `api_key_perm.py`:** With default `STRICT_ACTION_VALIDATION: False`, undeclared `@action`s only require a valid API key (no scoped permission). Set `STRICT_ACTION_VALIDATION: True` for strict catalog + permission checks on every custom action.
 
 **Permission mapping:**
 
@@ -288,6 +291,7 @@ python manage.py machine_auth_permissions   # print permission docs
 - **Throttle error:** set `machine_api_key` in `DEFAULT_THROTTLE_RATES`.
 - **Logging empty:** middleware enabled + valid machine auth on request.
 - **Log API 403 on `?api_key=`:** key belongs to another user.
+- **Startup error for undeclared `@action`:** set `STRICT_ACTION_VALIDATION: False` (default) or add the action to `api_key_perm.py`.
 
 ---
 

@@ -1,8 +1,13 @@
+import logging
+
 from django.core.exceptions import ImproperlyConfigured
 from django.urls import get_resolver
 
 from django_machine_auth.exceptions import MachineAuthConfigurationError
 from django_machine_auth.registry.module_registry import get_module
+from django_machine_auth.utils.settings import strict_action_validation
+
+logger = logging.getLogger(__name__)
 
 
 def _walk_patterns(urlpatterns):
@@ -44,15 +49,23 @@ def _validate_custom_actions(view_cls, module_name):
     for action in view_cls.get_extra_actions():
         action_name = action.__name__
         if action_name not in declared_actions:
-            raise MachineAuthConfigurationError(
+            message = (
                 f'Action "{action_name}" found in {view_cls.__name__} but not defined in module '
                 f'"{module_name}". Add it to your <app>/api_key_perm.py module actions mapping.'
             )
+            if strict_action_validation():
+                raise MachineAuthConfigurationError(message)
+            logger.warning("django_machine_auth: %s", message)
+            continue
+
         defined_methods = set(declared_actions.get(action_name, []))
         used_methods = set(getattr(action, "mapping", {}).keys())
         missing_methods = sorted(used_methods - defined_methods)
         if missing_methods:
-            raise MachineAuthConfigurationError(
+            message = (
                 f'Action "{action_name}" in {view_cls.__name__} uses methods {missing_methods} '
                 f'not declared in module "{module_name}". Add them to <app>/api_key_perm.py.'
             )
+            if strict_action_validation():
+                raise MachineAuthConfigurationError(message)
+            logger.warning("django_machine_auth: %s", message)

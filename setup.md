@@ -69,6 +69,7 @@ MACHINE_AUTH = {
     "ENABLE_REQUEST_LOGGING": False,
     "LOGGING_MODE": "redacted",           # raw | redacted | metadata_only
     "CACHE_TIMEOUT": 3600,
+    "STRICT_ACTION_VALIDATION": False,    # True = all @actions must be in api_key_perm.py
 }
 ```
 
@@ -238,11 +239,13 @@ class ComplaintMachineViewSet(MachineAuthViewSet, mixins.ListModelMixin):
         return Response({"status": "ok"})
 ```
 
-`export` must be listed in `api_key_perm.py`:
+To assign `complaint.export.get` on keys and enforce it, list `export` in `api_key_perm.py`:
 
 ```python
 actions = {"export": ["get"]}
 ```
+
+If `export` is **not** in `actions` and `STRICT_ACTION_VALIDATION` is `False` (default), the endpoint still works with a **valid API key only** (no `complaint.export.get` on the key). Startup logs a warning instead of crashing.
 
 ### Permission mapping (action → permission string)
 
@@ -311,14 +314,24 @@ def list(self, request):
     ...
 ```
 
-### Startup validation
+### Startup validation and `STRICT_ACTION_VALIDATION`
 
-On Django startup, the package checks that:
+| Setting | Startup (custom `@action`) | Runtime (custom `@action`) | CRUD (`list`, `create`, …) |
+|---------|--------------------------|----------------------------|----------------------------|
+| `False` (default) | **Warning** if missing from `actions` | Valid API key only | Permission required |
+| `True` | **Error** if missing from `actions` | Permission required | Permission required |
 
-- `module` on each `MachineAuthViewSet` is registered
-- Custom actions exist in `api_key_perm.py` with correct HTTP methods
+Always required at startup:
 
-Fix errors by updating `api_key_perm.py` and running `machine_auth_sync`.
+- `module` on each `MachineAuthViewSet` is registered in `api_key_perm.py`
+
+For strict deployments (recommended for production integrations):
+
+```python
+MACHINE_AUTH = {"STRICT_ACTION_VALIDATION": True}
+```
+
+Fix strict-mode errors by updating `api_key_perm.py` and running `machine_auth_sync`.
 
 ---
 
