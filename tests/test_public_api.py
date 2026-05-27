@@ -15,10 +15,18 @@ def test_import_paths_for_primary_entrypoints():
     from django_machine_auth.decorators import api_key_module
     from django_machine_auth.permissions import MachineAuthPermission
     from django_machine_auth.throttling import MachineAPIKeyRateThrottle
-    from django_machine_auth.views import MachineAuthViewSet
+    from django_machine_auth.views import (
+        MachineAPIKeyManagementViewSet,
+        MachineAPIKeyRequestLogViewSet,
+        MachineAuthViewSet,
+        MachinePermissionViewSet,
+    )
 
     assert MachineAPIKeyAuthentication
     assert api_key_module
     assert MachineAuthPermission
     assert MachineAPIKeyRateThrottle
     assert MachineAuthViewSet
+    assert MachineAPIKeyManagementViewSet
+    assert MachinePermissionViewSet
+    assert MachineAPIKeyRequestLogViewSet

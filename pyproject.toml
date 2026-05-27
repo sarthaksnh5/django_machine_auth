@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "django_machine_auth"
-version = "0.1.0"
+version = "0.3.0"
 description = "Machine-to-machine API key authentication for Django REST Framework"
 readme = "README.md"
 requires-python = ">=3.9"

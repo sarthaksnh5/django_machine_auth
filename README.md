@@ -1,206 +1,298 @@
 # django_machine_auth
 
-`django_machine_auth` is a machine-to-machine authentication framework for Django REST Framework using API keys and module-scoped permissions.
+[![PyPI](https://img.shields.io/pypi/v/django-machine-auth)](https://pypi.org/project/django-machine-auth/)
 
-## Navigation
+API key authentication for Django REST Framework with module-scoped permissions (similar to how platforms like GitHub, Stripe, or OpenAI expose scoped API keys).
 
-- Quickstart: install, configure, define module, protect viewset
-- Architecture: auth flow, permission resolution, and sync model
-- Operations: rotation, logging mode, and monitoring guidance
-- Troubleshooting: common setup and runtime issues
+**Current version:** 0.3.0 — permission catalog, API key management, and request log REST APIs.
 
-## Features
+## Documentation map
 
-- API key auth with `Authorization: machine_auth <api_key>`
-- Module-driven permission model (`module.crud` + `module.action.method`)
-- SHA256 key storage (raw keys are never persisted)
-- Cache-first authentication payload lookups
-- DB-backed permission registry (`MachinePermission`)
-- Permission sync and documentation commands
-- Optional request logging middleware with configurable privacy mode
-- DRF-compatible throttling and permission classes
+| Guide | Audience |
+|-------|----------|
+| [setup.md](setup.md) | Full step-by-step setup (recommended for first integration) |
+| This README | Quick reference and viewset overview |
 
-## Installation
+### Topics in setup.md
+
+1. [Installation and settings](setup.md#2-requirements)
+2. [Part I — Define permissions in code](setup.md#part-i--define-permissions-in-code)
+3. [Part II — Protect your APIs (`MachineAuthViewSet`)](setup.md#part-ii--protect-your-apis-machineauthviewset)
+4. [Part III — Permission catalog API (`MachinePermissionViewSet`)](setup.md#part-iii--permission-catalog-api-machinepermissionviewset)
+5. [Part IV — API key management](setup.md#part-iv--api-key-management)
+6. [Part V — Call protected APIs with an API key](setup.md#part-v--call-protected-apis-with-an-api-key)
+7. [Part VII — Request logs API](setup.md#part-vii--request-logs-api-machineapikeyrequestlogviewset)
+8. [Logging, commands, troubleshooting](setup.md#part-vi--logging-commands-and-troubleshooting)
+
+---
+
+## Viewsets at a glance
+
+The package provides **four viewsets** for four different jobs. Do not mix them up.
+
+| Viewset | When to use | Inherit in your project? | Auth on requests |
+|---------|-------------|---------------------------|------------------|
+| `MachineAuthViewSet` | Protect **your business APIs** (integrations call these) | **Yes** | `Authorization: machine_auth <key>` |
+| `MachinePermissionViewSet` | List permissions for **assignment UI** (dropdowns) | **Optional** (subclass to filter) | JWT / session (your DRF auth) |
+| `MachineAPIKeyManagementViewSet` | Create/list/update/revoke keys | **Usually no** (use package URLs) | JWT / session (your DRF auth) |
+| `MachineAPIKeyRequestLogViewSet` | List/inspect machine-auth **request logs** | **Usually no** (use package URLs) | JWT / session (your DRF auth) |
+
+Import from:
+
+```python
+from django_machine_auth.views import (
+    MachineAuthViewSet,
+    MachinePermissionViewSet,
+    MachineAPIKeyManagementViewSet,
+    MachineAPIKeyRequestLogViewSet,
+)
+```
+
+---
+
+## Quick start
+
+### 1. Install and configure
 
 ```bash
-pip install django_machine_auth
+pip install django-machine-auth
 ```
 
-## Configure Django
-
-Add app to `INSTALLED_APPS`:
-
 ```python
-INSTALLED_APPS = [
-    # ...
-    "django_machine_auth",
-]
-```
+INSTALLED_APPS = ["django_machine_auth", ...]
 
-Optional settings:
-
-```python
 MACHINE_AUTH = {
-    "KEY_PREFIX": "mac_",                 # default: mac_
-    "ENABLE_REQUEST_LOGGING": False,      # default: False
-    "LOGGING_MODE": "redacted",           # raw | redacted | metadata_only
-    "CACHE_TIMEOUT": 3600,                # default: 3600 seconds
+    "KEY_PREFIX": "mac_",
+    "ENABLE_REQUEST_LOGGING": False,
+    "LOGGING_MODE": "redacted",
+    "CACHE_TIMEOUT": 3600,
+}
+
+REST_FRAMEWORK = {
+    "DEFAULT_THROTTLE_RATES": {
+        "machine_api_key": "1000/hour",
+    },
 }
 ```
 
-## Define module permissions
+### 2. Wire management URLs (one line)
 
-Create `<your_app>/api_key_perm.py`:
+```python
+path("machine-auth/", include("django_machine_auth.urls")),
+```
+
+### 3. Define permissions in code
+
+`your_app/api_key_perm.py`:
 
 ```python
 from django_machine_auth.decorators import api_key_module
 
 
-@api_key_module("users", label="User Management")
-class UsersModule:
+@api_key_module("complaint", label="Complaint")
+class ComplaintModule:
     crud = ["view", "create", "update", "delete"]
-    actions = {
-        "profile": ["get", "post"],
-    }
+    actions = {"export": ["get"]}
 ```
 
-## Protect DRF endpoints
+Then:
+
+```bash
+python manage.py machine_auth_sync
+```
+
+### 4. Protect your API — inherit `MachineAuthViewSet`
 
 ```python
-from rest_framework.decorators import action
+from rest_framework import mixins
 from rest_framework.response import Response
 from django_machine_auth.views import MachineAuthViewSet
 
 
-class UserMachineViewSet(MachineAuthViewSet):
-    module = "users"
+class ComplaintMachineViewSet(MachineAuthViewSet, mixins.ListModelMixin):
+    module = "complaint"  # required — must match api_key_perm.py
+
+    def get_queryset(self):
+        return Complaint.objects.filter(...)
 
     def list(self, request):
-        return Response({"ok": True})
-
-    @action(detail=False, methods=["get"])
-    def profile(self, request):
-        return Response({"ok": True})
+        return Response(ComplaintSerializer(self.get_queryset(), many=True).data)
 ```
 
-## Permission mapping
+Register on **your** router (e.g. `/v1/complaint/machine/`).
 
-- `list`, `retrieve` -> `module.view`
-- `create` -> `module.create`
-- `update`, `partial_update` -> `module.update`
-- `destroy` -> `module.delete`
-- Custom action -> `module.<action>.<http_method_lower>`
+### 5. Create keys and call your API
 
-## Management commands
+Management (JWT/session):
 
-Sync code-defined permissions into DB:
-
-```bash
-python manage.py machine_auth_sync
-python manage.py machine_auth_sync --dry-run
+```http
+POST /machine-auth/machine-api-keys/
 ```
 
-Print permission documentation:
+Integration call:
 
-```bash
-python manage.py machine_auth_permissions
+```http
+GET /v1/complaint/machine/
+Authorization: machine_auth mac_xxxxx
 ```
 
-## Admin token creation API (DRF)
+---
 
-Use `MachineAPIKeyManagementViewSet` for admin-only key issuance.
+## `MachineAuthViewSet` (protect your APIs)
 
-Simplest URL wiring:
+**Purpose:** Endpoints that external systems call using an API key.
+
+**What it provides automatically:**
+
+- `MachineAPIKeyAuthentication`
+- `MachineAuthPermission` (checks key’s permission list vs action + HTTP method)
+- `MachineAPIKeyRateThrottle`
+
+**You must:**
+
+1. Set `module = "<name>"` matching `@api_key_module("<name>")`.
+2. Add DRF mixins (`ListModelMixin`, etc.) and implement actions.
+3. Declare custom `@action` names in `api_key_perm.py` under `actions`.
+4. If mixing with another base viewset (e.g. JWT), put `MachineAuthViewSet` **first** in inheritance, or set `authentication_classes` / `permission_classes` explicitly on the combined class.
+
+**Permission mapping:**
+
+| DRF action | Required permission |
+|------------|---------------------|
+| `list`, `retrieve` | `module.view` |
+| `create` | `module.create` |
+| `update`, `partial_update` | `module.update` |
+| `destroy` | `module.delete` |
+| custom `@action` | `module.<action>.<method_lower>` |
+
+**After auth:** `request.machine_api_key` is set; use `request.machine_api_key.permissions` if needed.
+
+Details: [setup.md — Part II](setup.md#part-ii--protect-your-apis-machineauthviewset).
+
+---
+
+## `MachinePermissionViewSet` (permission catalog)
+
+**Purpose:** Return assignable permissions from the database (for UI when creating/updating keys).
+
+**Default route (no subclass needed):**
+
+- `GET /machine-auth/permissions/`
+- `GET /machine-auth/permissions/?module=complaint`
+- `GET /machine-auth/permissions/?search=export`
+
+**Restrict what users can assign** — subclass and override `get_queryset()`:
 
 ```python
-from django.urls import include, path
+from django_machine_auth.views import MachinePermissionViewSet
 
-urlpatterns = [
-    path("machine-auth/", include("django_machine_auth.urls")),
-]
+
+class ComplaintPermissionViewSet(MachinePermissionViewSet):
+    def get_queryset(self):
+        return super().get_queryset().filter(module="complaint")
 ```
 
-This exposes:
+Register the subclass on your router only if you need a custom path; otherwise use built-in filters.
 
-- `POST /machine-auth/machine-api-keys/`
+Details: [setup.md — Part III](setup.md#part-iii--permission-catalog-api-machinepermissionviewset).
 
-Required request fields:
+---
 
-- `name`
-- `user` (user id)
-- `permissions` (list of permission strings from `MachinePermission`)
+## API key management
 
-Optional:
+**Purpose:** Create, list, inspect, update, and revoke API keys (admin portal / internal API).
 
-- `expires_at`
+**Use package URLs** (recommended):
 
-Example request payload:
+| Method | Path |
+|--------|------|
+| GET | `/machine-auth/permissions/` |
+| GET | `/machine-auth/machine-api-keys/` |
+| POST | `/machine-auth/machine-api-keys/` |
+| GET | `/machine-auth/machine-api-keys/{id}/` |
+| PATCH | `/machine-auth/machine-api-keys/{id}/` |
+| POST | `/machine-auth/machine-api-keys/{id}/deactivate/` |
 
-```json
-{
-  "name": "Gov Portal",
-  "user": 5,
-  "permissions": ["users.view", "users.create"],
-  "expires_at": "2026-12-31T23:59:59Z"
-}
-```
+**Access:**
 
-Response includes `raw_api_key` once. Store it securely; only hash is persisted.
+- Superuser: all keys; create for any user; list filter `?user=<id>`.
+- Authenticated user: own keys only; create only for self.
 
-## Architecture overview
+`raw_api_key` is returned **once** on create. List/retrieve never expose `hashed_key`.
 
-Runtime request flow:
+Details: [setup.md — Part IV](setup.md#part-iv--api-key-management).
 
-1. `MachineAPIKeyAuthentication` parses and validates auth header.
-2. Hash lookup checks cache first, then DB fallback.
-3. `MachineAuthPermission` resolves action/method permission.
-4. `MachineAPIKeyRateThrottle` applies per-key throttle scope.
-5. Optional `MachineAuthLoggingMiddleware` writes request log entry.
+---
 
-## Logging modes
+## Request logs API
 
-- `raw`: stores full request/response payload snapshots
-- `redacted`: masks sensitive keys (`authorization`, `password`, `token`, `secret`, `api_key`)
-- `metadata_only`: stores only metadata (status, url, method, timing, ip)
+**Purpose:** Browse audit logs for machine-authenticated API calls (SuperAdmin portal or user self-service).
 
-Enable middleware when needed:
+**Prerequisites:** `ENABLE_REQUEST_LOGGING = True` and `MachineAuthLoggingMiddleware` installed.
+
+| Method | Path |
+|--------|------|
+| GET | `/machine-auth/request-logs/` |
+| GET | `/machine-auth/request-logs/{id}/` |
+
+**Access:**
+
+- **Superuser:** all logs; `?user=<id>`, `?api_key=<id>`.
+- **Authenticated user:** logs for API keys they own; `?api_key=<id>` (403 if not their key).
+
+**List** returns metadata only (method, url, status, duration, etc.). **Detail** includes `headers`, `request_body`, `response_body` when stored.
+
+Details: [setup.md — Part VII](setup.md#part-vii--request-logs-api-machineapikeyrequestlogviewset).
+
+---
+
+## Three “permission” concepts (do not confuse)
+
+| Concept | Where it lives | Used for |
+|---------|----------------|----------|
+| Module definition | `api_key_perm.py` in your app | Source of truth in code |
+| Permission registry | `MachinePermission` table | Validation + catalog API |
+| Key permissions | `MachineAPIKey.permissions` JSON | Runtime checks on protected APIs |
+
+Flow: **code** → `machine_auth_sync` → **DB** → assign on key → **MachineAuthViewSet** enforces on each request.
+
+---
+
+## Logging
 
 ```python
 MIDDLEWARE = [
-    # ...
     "django_machine_auth.middleware.logging_middleware.MachineAuthLoggingMiddleware",
 ]
+MACHINE_AUTH = {"ENABLE_REQUEST_LOGGING": True, "LOGGING_MODE": "redacted"}
 ```
 
-## Security and operations
+Only requests with successful machine auth context are logged.
 
-- Rotate API keys periodically.
-- Use short expiry windows for integration keys where possible.
-- Keep logging mode as `redacted` or `metadata_only` in production.
-- Run `machine_auth_sync` as part of deploy/startup checks after module permission changes.
+---
 
-Detailed operations guide: `docs/OPERATIONS.md`.
+## Management commands
+
+```bash
+python manage.py machine_auth_sync          # DB ← code permissions
+python manage.py machine_auth_permissions   # print permission docs
+```
+
+---
 
 ## Troubleshooting
 
-- `No default throttle rate set for 'machine_api_key'`:
-  - Add `REST_FRAMEWORK.DEFAULT_THROTTLE_RATES.machine_api_key`.
-- `Module '<name>' used by <ViewSet> is not registered`:
-  - Ensure `<app>/api_key_perm.py` exists and module name matches `view.module`.
-- `Action "<action>" ... not defined in module`:
-  - Add action/method mapping in `api_key_perm.py`.
-- Permission denied for custom action:
-  - Confirm API key includes exact `module.action.method` string.
+- **403 on protected API:** key missing exact permission string (e.g. `complaint.export.get`).
+- **401:** invalid/expired/inactive key or wrong `KEY_PREFIX`.
+- **Module not registered:** `view.module` must match `api_key_perm.py`; run sync.
+- **Throttle error:** set `machine_api_key` in `DEFAULT_THROTTLE_RATES`.
+- **Logging empty:** middleware enabled + valid machine auth on request.
+- **Log API 403 on `?api_key=`:** key belongs to another user.
 
-## Local test workflow
+---
 
-```bash
-python -m venv .venv
-.venv/bin/python -m pip install -e ".[test]"
-.venv/bin/pytest -q
-```
+## More
 
-## Release and upgrade docs
-
-- Changelog: `CHANGELOG.md`
-- Upgrade guide: `UPGRADING.md`
+- [CHANGELOG.md](CHANGELOG.md)
+- [UPGRADING.md](UPGRADING.md)
+- [docs/OPERATIONS.md](docs/OPERATIONS.md)

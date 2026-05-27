@@ -4,6 +4,7 @@
 
 - Update version in `pyproject.toml` and `django_machine_auth/__init__.py`.
 - Update `CHANGELOG.md` with release date and notable changes.
+- Update user-facing docs: `README.md`, `setup.md`, and `UPGRADING.md` for new viewsets, URLs, or behavior changes.
 - Run tests: `make test` (or `scripts/test.sh`).
 - Run permission sync dry-run in a sample integration:
   - `python manage.py machine_auth_sync --dry-run`

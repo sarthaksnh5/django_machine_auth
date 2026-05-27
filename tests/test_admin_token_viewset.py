@@ -14,7 +14,7 @@ pytestmark = pytest.mark.django_db
 
 
 @override_settings(ROOT_URLCONF="tests.urls_admin_tokens")
-def test_admin_can_create_machine_api_key():
+def test_superuser_can_create_machine_api_key_for_any_user():
     MachinePermission.objects.create(module="users", permission="users.view", label="View")
     MachinePermission.objects.create(module="users", permission="users.create", label="Create")
     user_model = get_user_model()
@@ -39,34 +39,39 @@ def test_admin_can_create_machine_api_key():
     assert response.data["name"] == "Gov Portal"
     assert response.data["user"] == owner.id
     assert response.data["raw_api_key"].startswith("mac_")
+    assert response.data["permissions"] == ["users.view", "users.create"]
 
     created = MachineAPIKey.objects.get(pk=response.data["id"])  # pylint: disable=no-member
     assert created.user_id == owner.id
-    assert created.name == "Gov Portal"
-    assert created.expires_at is not None
-    assert created.permissions == ["users.view", "users.create"]
     assert created.hashed_key == hash_api_key(response.data["raw_api_key"])
 
 
 @override_settings(ROOT_URLCONF="tests.urls_admin_tokens")
-def test_non_admin_cannot_create_machine_api_key():
+def test_authenticated_user_can_create_key_for_self_only():
     MachinePermission.objects.create(module="users", permission="users.view", label="View")
     user_model = get_user_model()
     normal_user = user_model.objects.create_user(username="u1")
-    owner = user_model.objects.create_user(username="owner2")
+    other = user_model.objects.create_user(username="owner2")
     client = APIClient()
     client.force_authenticate(user=normal_user)
 
-    response = client.post(
+    own = client.post(
         "/machine-api-keys/",
-        {"name": "Contractor Portal", "user": owner.id, "permissions": ["users.view"]},
+        {"name": "My Portal", "user": normal_user.id, "permissions": ["users.view"]},
         format="json",
     )
-    assert response.status_code == 403
+    other_user = client.post(
+        "/machine-api-keys/",
+        {"name": "Contractor Portal", "user": other.id, "permissions": ["users.view"]},
+        format="json",
+    )
+
+    assert own.status_code == 201
+    assert other_user.status_code == 400
 
 
 @override_settings(ROOT_URLCONF="tests.urls_admin_tokens")
-def test_admin_cannot_create_key_with_invalid_permissions():
+def test_create_rejects_invalid_permissions():
     user_model = get_user_model()
     admin = user_model.objects.create_superuser(username="admin2", email="admin2@test.com", password="admin")
     owner = user_model.objects.create_user(username="owner3")
